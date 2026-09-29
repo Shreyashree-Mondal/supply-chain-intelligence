@@ -1,0 +1,15 @@
+# add these lines to your existing .gitignore
+data/raw/
+data/processed/
+data/knowledge_base/
+models/
+reports/eval_results.csv
+__pycache__/
+.pytest_cache/
+*.joblib
+*.log
+reports/human_review_key.csv
+reports/human_review_blind.csv
+reports/human_review_scored.csv
+reports/human_review.csv
+github_upload.zip

@@ -1,0 +1,8 @@
+# LLM layer (fine-tuning, embeddings, evaluation). Install a torch build that matches your GPU's CUDA first:
+#   https://pytorch.org/get-started/locally/
+torch>=2.3
+transformers>=4.44
+peft>=0.11
+accelerate>=0.30
+bitsandbytes>=0.43        # needed for QLoRA (4-bit); Linux + NVIDIA GPU
+sentence-transformers>=3.0  # embeddings for RAG (or set SCP_RAG_BACKEND=tfidf)
