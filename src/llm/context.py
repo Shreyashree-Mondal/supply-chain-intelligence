@@ -20,6 +20,8 @@ def build_context(question: str, retriever: Retriever | None, lookup: ProductLoo
                 break
             if exact and h["id"].startswith("product_"):
                 continue                        # other products' records would only be noise
-            blocks.append(h["text"])
-            sources.append({"id": h["id"], "title": h["title"], "score": h["score"]})
+            tag = f'[Source: {h["source"]}, p.{h["page"]}]\n' if h.get("source") else ""
+            blocks.append(tag + h["text"])
+            sources.append({"id": h["id"], "title": h["title"], "score": h["score"],
+                            "source": h.get("source", ""), "page": h.get("page", 0)})
     return {"context": "\n\n".join(blocks), "sources": sources, "product_ids": product_ids}
