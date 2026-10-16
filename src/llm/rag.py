@@ -23,6 +23,8 @@ class Chunk:
     id: str
     title: str
     text: str
+    source: str = ""      # file name for PDF chunks (used for citations)
+    page: int = 0          # 1-based page number for PDF chunks
 
 
 def load_chunks(kb_dir: Path = config.KB_DIR) -> list[Chunk]:
@@ -42,6 +44,8 @@ def load_chunks(kb_dir: Path = config.KB_DIR) -> list[Chunk]:
             parts.append("\n".join(cur))
         for i, p in enumerate(parts or [""]):
             chunks.append(Chunk(id=f"{f.stem}#{i}", title=title, text=f"{title}\n{p}".strip()))
+    from src.llm.pdf_ingest import load_pdf_chunks   # lazy import avoids a circular import
+    chunks.extend(load_pdf_chunks())
     return chunks
 
 
@@ -88,6 +92,10 @@ class Retriever:
 
     @classmethod
     def load(cls, path: Path = config.RAG_INDEX_DIR) -> "Retriever":
+        import os
+        if os.getenv("SCP_RETRIEVER", "").lower() == "pgvector":     # opt-in: serve search() from PostgreSQL
+            from src.llm.pgvector_store import PgVectorRetriever      # lazy import avoids a circular import
+            return PgVectorRetriever()
         meta = json.loads((path / "meta.json").read_text())
         r = cls(meta["backend"])
         r.chunks = [Chunk(**json.loads(l)) for l in (path / "chunks.jsonl").read_text(encoding="utf-8").splitlines() if l]
@@ -109,7 +117,8 @@ class Retriever:
             top = np.argsort(-sims)[:k]
             pairs = [(int(i), float(sims[i])) for i in top if sims[i] > 0]
         return [{"id": self.chunks[i].id, "title": self.chunks[i].title, "score": round(s, 4),
-                 "text": self.chunks[i].text} for i, s in pairs]
+                 "text": self.chunks[i].text,
+                 "source": self.chunks[i].source, "page": self.chunks[i].page} for i, s in pairs]
 
 
 def build_index(backend: str | None = None) -> Retriever:
