@@ -6,3 +6,5 @@ peft>=0.11
 accelerate>=0.30
 bitsandbytes>=0.43        # needed for QLoRA (4-bit); Linux + NVIDIA GPU
 sentence-transformers>=3.0  # embeddings for RAG (or set SCP_RAG_BACKEND=tfidf)
+psycopg[binary]>=3.2   # PostgreSQL driver (optional pgvector backend)
+pgvector>=0.3          # pgvector vector type for psycopg
