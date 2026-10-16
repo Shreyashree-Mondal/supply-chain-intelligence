@@ -72,4 +72,41 @@ def _build(messages: list, latency: float) -> tuple[AgentAnswer, CallMetrics]:
                     if tc["name"] in FIELD_FOR_TOOL:
                         fields[FIELD_FOR_TOOL[tc["name"]]] = results[tc["id"]]
     ai = [m for m in turn if m.type == "ai"]
-    tin = sum((m.usage_metadata or
+    tin = sum((m.usage_metadata or {}).get("input_tokens", 0) for m in ai)
+    tout = sum((m.usage_metadata or {}).get("output_tokens", 0) for m in ai)
+    metrics = CallMetrics(latency_s=round(latency, 3), llm_calls=len(ai), input_tokens=tin, output_tokens=tout,
+                          total_tokens=tin + tout,
+                          est_cost_usd=round(tin / 1e6 * PRICE_IN_PER_M + tout / 1e6 * PRICE_OUT_PER_M, 6))
+    answer = AgentAnswer(answer=str(messages[-1].content).strip(), tool_calls=calls, **fields)  # validates here
+    return answer, metrics
+
+
+def _log(record: dict) -> None:
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with LOG_PATH.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
+
+def ask(question: str, thread_id: str = "structured-demo") -> tuple[AgentAnswer, CallMetrics]:
+    from src.agent.agent import graph  # lazy: importing it creates the Groq client, which needs an API key
+    call_id, t0 = uuid.uuid4().hex[:8], time.perf_counter()
+    result = graph.invoke({"messages": [("user", question)]}, {"configurable": {"thread_id": thread_id}})
+    latency = time.perf_counter() - t0
+    base = {"ts": datetime.now(timezone.utc).isoformat(), "call_id": call_id, "question": question}
+    try:
+        answer, metrics = _build(result["messages"], latency)
+    except ValidationError as e:
+        _log({**base, "status": "invalid", "latency_s": round(latency, 3), "error": str(e)[:500]})
+        raise
+    _log({**base, "status": "ok", "metrics": metrics.model_dump(), "answer": answer.model_dump()})
+    return answer, metrics
+
+
+if __name__ == "__main__":
+    qs = [
+        "A product has annual demand of 12000 units, order cost of 50, and holding cost of 2 per unit per year. What is the EOQ?",
+        "Average daily demand is 40, lead time is 7 days, daily demand std dev is 10, and I want a 95% service level. What is the reorder point?",
+    ]
+    for i, q in enumerate(qs):
+        a, m = ask(q, thread_id=f"demo-{i}")
+        print(json.dumps({"answer": a.model_dump(), "metrics": m.model_dump()}, indent=2), "\n")
