@@ -13,3 +13,4 @@ reports/human_review_blind.csv
 reports/human_review_scored.csv
 reports/human_review.csv
 github_upload.zip
+reports/agent_calls.jsonl
