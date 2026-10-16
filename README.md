@@ -81,6 +81,47 @@ scored BERTScore ≈1.00 and ROUGE-L 0.90 but correctness 2 from the judge.
 - Lead time is an assumption (shipping days), and 18 recently introduced products are excluded from the inventory policy.
 - Not implemented: LangChain, semantic caching, model routing, Docker, cloud deployment.
 
+## Document ingestion, structured agent output, and pgvector
+
+### PDF ingestion with source citations
+Put PDFs in `data/documents/` and rebuild the index:
+
+    python -m src.llm.rag build
+
+Each PDF page is split into chunks on sentence boundaries. Retrieval results and the LLM context
+carry the source file name and page number, so answers can cite where they came from. The demo
+document is Rădăşanu (2016), "Inventory Management, Service Level and Safety Stock", Journal of
+Public Administration, Finance and Law, Issue 9
+(https://www.jopafl.com/uploads/issue9/INVENTORY_MANAGEMENT_SERVICE_LEVEL_AND_SAFETY_STOCK.pdf).
+The paper is not included in this repo; download it into `data/documents/` to reproduce.
+
+### Structured, validated and logged agent output
+    python -m src.agent.structured
+
+Wraps the LangGraph inventory agent. The structured result (EOQ, safety stock, reorder point) is
+built from what the tools actually returned and validated with Pydantic, for example EOQ must be
+greater than 0. Every call is timed and its token counts are appended to `reports/agent_calls.jsonl`.
+Requires `GROQ_API_KEY` to be set. The cost estimate is zero until you fill in your model's prices
+in `src/agent/structured.py`.
+
+### Optional pgvector backend (PostgreSQL)
+The same chunks and embeddings can be served from PostgreSQL with the pgvector extension.
+
+1. Install PostgreSQL with the pgvector extension, and `pip install -r requirements-llm.txt`.
+2. Create a database named `scp_vectors` and run `CREATE EXTENSION vector;` in it.
+3. Load the index: `python -m src.llm.pgvector_store load`
+4. Use it: set `SCP_RETRIEVER=pgvector` and the API, agent tools and evaluation script will
+   search PostgreSQL. The default is the FAISS index.
+
+By default it connects through a unix socket in `~/pgsock`. Set `SCP_PG_DSN` to point at your own
+server instead. Search results match the FAISS index (same top hits and scores).
+
+### Tests
+    pytest -q
+
+The pgvector tests skip themselves when PostgreSQL or `psycopg` is not available, so the suite
+runs in CI without a database or an API key.
+
 ## Run it
 ```bash
 pip install -r requirements.txt                       # core (no GPU); pytest -q runs the test suite on synthetic data
