@@ -2,8 +2,11 @@
 
 End-to-end supply-chain analytics project on the public DataCo dataset, extended with a GenAI layer:
 a late-delivery risk model, demand forecasting and inventory optimisation for every product, a RAG pipeline,
-versioned prompt engineering, **LoRA instruction fine-tuning** (Hugging Face PEFT) of an open-source LLM, a FastAPI service,
+versioned prompt engineering, **LoRA instruction fine-tuning** (Hugging Face PEFT) of an open-source LLM, a FastAPI service packaged with Docker,
+a LangGraph agent with 10 LangChain tools, reinforcement-learning replenishment agents,
 and an evaluation that compares prompting vs RAG vs fine-tuning on held-out data.
+
+**Live demo:** https://supply-chain-assistant-demo.streamlit.app/
 
 > All experiments ran on CPU with a small model (Qwen2.5-0.5B-Instruct). The instruction dataset is synthetic (template-generated from computed values).
 > See [Limitations](#limitations) before drawing conclusions from any number below.
@@ -18,6 +21,9 @@ and an evaluation that compares prompting vs RAG vs fine-tuning on held-out data
 | Valid structured JSON with correct risk band (n=17) | 53% base → 77% engineered prompt → **100%** fine-tuned |
 | Correctly declining when data is missing (n=10 each) | 0–50% base → **100%** fine-tuned |
 | LLM-judge score, 20 paired questions (1–5 correctness) | base **1.70** vs fine-tuned system **4.60** |
+| LangGraph agent | Chatbot with **10 LangChain tools** that calls the inventory, forecasting and risk functions |
+| Reinforcement learning | PPO replenishment agents for **4 products**, benchmarked against a tuned (s, Q) policy, which matched or beat PPO |
+| Engineering | FastAPI service packaged with **Docker**, **46-test** Pytest suite in GitHub Actions CI |
 
 ## Pipeline
 ```
@@ -25,6 +31,8 @@ raw CSV ─► src.pipeline ─► late-delivery XGBoost + demand forecasts + in
                           ├─► knowledge base (concept notes + documents generated from the data) ─► RAG index (FAISS)
                           ├─► instruction dataset (JSONL) ─► LoRA fine-tune ─► adapter
                           └─► FastAPI: /ask  /predict-late-risk  /inventory/{id}  /inventory-scenario  /products
+                          ├─► LangGraph agent (10 LangChain tools) ─► structured, validated, logged output
+                          └─► RL replenishment agents (PPO) vs tuned (s, Q) policy
 ```
 **Design principle:** the model is fine-tuned for terminology, format and behaviour (calculation steps, interpreting model output, JSON, declining when
 data is missing). Facts and numbers are never learned: they come from RAG plus an exact product-record lookup.
@@ -44,6 +52,10 @@ data is missing). Facts and numbers are never learned: they come from RAG plus a
 - **Instruction dataset:** 1,832 examples, 10 task types, split by product (held-out products never appear in training). Numbers are computed from real outputs and standard formulas; wording is template-generated.
 - **LoRA fine-tuning:** Qwen2.5-0.5B-Instruct, r=16, alpha=32, 8.8M trainable parameters (1.75%), 3 epochs on 1,473 examples, 128 min on CPU; loss on answer tokens only.
   Validation loss 0.126 → 0.039 → 0.031.
+
+  ## Agent and reinforcement learning
+- **LangGraph agent:** a chatbot with 10 LangChain tools that call the inventory, forecasting and risk functions, so numbers come from code, not from the model. Requires `GROQ_API_KEY`.
+- **Reinforcement learning:** PPO agents trained to set replenishment decisions for 4 products and compared with a tuned (s, Q) inventory policy. The tuned (s, Q) policy matched or beat PPO.
 
 ## Evaluation
 Held-out test examples (≤25 per task), answered under each setup. Primary metric per task: numeric answer correct (calculation), valid JSON with correct band (structured_json),
@@ -79,7 +91,8 @@ scored BERTScore ≈1.00 and ROUGE-L 0.90 but correctness 2 from the judge.
 - Everything ran on CPU with a 0.5B model. **QLoRA (4-bit) was not run.** The code path exists but is untested on a GPU.
 - The judge is an LLM, not a human, and was applied once; the sample is small. Judge-scored files are not included.
 - Lead time is an assumption (shipping days), and 18 recently introduced products are excluded from the inventory policy.
-- Not implemented: LangChain, semantic caching, model routing, Docker, cloud deployment.
+- Not implemented: semantic caching, model routing, cloud deployment.
+- The RL agents cover 4 products only, and the tuned (s, Q) policy matched or beat PPO, so PPO serves as a benchmark here, not a replacement for the inventory policy..
 
 ## Document ingestion, structured agent output, and pgvector
 
@@ -117,7 +130,7 @@ By default it connects through a unix socket in `~/pgsock`. Set `SCP_PG_DSN` to 
 server instead. Search results match the FAISS index (same top hits and scores).
 
 ### Tests
-    pytest -q
+        pytest -q          # 46 tests
 
 The pgvector tests skip themselves when PostgreSQL or `psycopg` is not available, so the suite
 runs in CI without a database or an API key.
@@ -133,6 +146,8 @@ python -m src.llm.rag build
 python -m src.llm.finetune --model Qwen/Qwen2.5-0.5B-Instruct --mode lora --batch-size 2 --grad-accum 8 --out models/lora_qwen0.5b
 SCP_BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct SCP_ADAPTER_DIR=models/lora_qwen0.5b python -m src.llm.evaluate --max-per-task 25
 uvicorn src.api.main:app --port 8000                  # docs at /docs; SCP_LLM_BACKEND=extractive runs without any LLM
+docker build -t supply-chain-intelligence .
+docker run -p 8000:8000 supply-chain-intelligence
 python -m src.llm.prompt_lab "What is the reorder point for <product name>?" --compare
 ```
 With a GPU, `--mode qlora` uses a 4-bit base model. Details of the prompt design: [docs/prompt_engineering.md](docs/prompt_engineering.md).
